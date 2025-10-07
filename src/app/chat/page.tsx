@@ -22,11 +22,16 @@ export default function ChatPage() {
 		}
 	}, []);
   const setName = (name: string) => {
+    const prev = userName;
     setUserName(name);
     setHasSetName(true);
     localStorage.setItem('chatUserName', name);
     if (socket && connected) {
-      socket.emit('setName', name);
+      if (prev) {
+        socket.emit('changeName', name);
+      } else {
+        socket.emit('setName', name);
+      }
     }
   };
   
@@ -69,16 +74,29 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, leaveMessage]);
     };
 
+    const onNameChanged = (data: { oldName: string; newName: string; timestamp: number }) => {
+      const systemMsg: ChatMessage = {
+        id: `name-${Date.now()}`,
+        name: data.oldName,
+        message: `is now ${data.newName}`,
+        timestamp: data.timestamp,
+        type: 'join',
+      };
+      setMessages((prev) => [...prev, systemMsg]);
+    };
+
     if (socket && connected) {
       socket.on("message", onMessage);
       socket.on("userJoined", onUserJoined);
       socket.on("userLeft", onUserLeft);
+      socket.on("nameChanged", onNameChanged);
     }
     
     return () => {
       socket?.off("message", onMessage);
       socket?.off("userJoined", onUserJoined);
       socket?.off("userLeft", onUserLeft);
+      socket?.off("nameChanged", onNameChanged);
     };
   }, [connected, socket]);
 
@@ -107,7 +125,7 @@ export default function ChatPage() {
     setInput("");
   };
 
-  // No page-level key handler needed; handled inside components
+  
 
   // Name input modal
   if (!hasSetName) {
@@ -116,14 +134,15 @@ export default function ChatPage() {
         nameInput={nameInput}
         onNameChange={setNameInput}
         onSubmit={handleSetName}
+        
       />
     );
   }
 
   return (
-    <div className="min-h-screen bg-lime-800 p-5">
-      <div className="max-w-4xl mx-auto">
-        <div className="bg-lime-900 rounded-lg shadow-lg overflow-hidden">
+    <div className="min-h-screen bg-stone-100/10  p-5">
+      <div className="max-w-4xl mx-auto ">
+        <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-amber-200">
           {/* Header */}
           <ChatHeader userName={userName} connected={connected} onChangeName={resetUser} />
 

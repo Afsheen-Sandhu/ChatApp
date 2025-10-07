@@ -59,6 +59,28 @@ io.on("connection", (socket) => {
 		io.emit("message", messageData);
 	});
 
+	// Handle name change
+	socket.on("changeName", (newName) => {
+		const oldName = connectedUsers.get(socket.id);
+		if (!oldName) {
+			// If no previous name, treat as initial set
+			connectedUsers.set(socket.id, newName);
+			socket.broadcast.emit("userJoined", {
+				name: newName,
+				timestamp: Date.now()
+			});
+			return;
+		}
+
+		connectedUsers.set(socket.id, newName);
+		io.emit("nameChanged", {
+			oldName,
+			newName,
+			timestamp: Date.now(),
+		});
+		console.log(`✏️  ${oldName} is now ${newName}`);
+	});
+
 	socket.on("disconnect", () => {
 		const userName = connectedUsers.get(socket.id);
 		if (userName) {

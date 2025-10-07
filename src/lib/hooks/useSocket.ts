@@ -35,14 +35,17 @@ export function useSocket(options?: {
 		const socket = io(url, { path });
 		setSocketInstance(socket);
 
-		socket.on("connect", () => {
+		const onConnect = () => {
 			setConnected(true);
-		});
-		socket.on("disconnect", () => setConnected(false));
+		};
+		const onDisconnect = () => setConnected(false);
+
+		socket.on("connect", onConnect);
+		socket.on("disconnect", onDisconnect);
 
 		return () => {
-			socket.off("connect");
-			socket.off("disconnect");
+			socket.off("connect", onConnect);
+			socket.off("disconnect", onDisconnect);
 			socket.disconnect();
 		};
 	}, [connectOnMount, url, path]);
