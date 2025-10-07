@@ -1,50 +1,144 @@
 "use client";
 import { useEffect, useState } from "react";
-import { useSocket } from "@/lib/hooks/useSocket";
+import { ChatMessage, useSocket } from "@/lib/hooks/useSocket";
+import NameModal from "@/components/NameModal";
+import ChatHeader from "@/components/ChatHeader";
+import MessageList from "@/components/MessageList";
+import MessageInput from "@/components/MessageInput";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
-  const { socket, connected, messages, deliveredCount, sendMessage } = useSocket();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [nameInput, setNameInput] = useState("");
+  const [hasSetName, setHasSetName] = useState(false);  const [userName, setUserName] = useState("");
+  
+  const { socket, connected, } = useSocket();
 
-  useEffect(() => {
-    if (connected) {
-      console.log("✅ Connected:", socket.id);
+  	useEffect(() => {
+		const savedName = localStorage.getItem('chatUserName');
+		if (savedName) {
+			// Prefill only; do not auto-login
+			setNameInput(savedName);
+		}
+	}, []);
+  const setName = (name: string) => {
+    setUserName(name);
+    setHasSetName(true);
+    localStorage.setItem('chatUserName', name);
+    if (socket && connected) {
+      socket.emit('setName', name);
     }
+  };
+  
+  const resetUser = () => {
+    localStorage.removeItem('chatUserName');
+    setUserName("");
+    setHasSetName(false);
+  };
+  
+  // If we reconnect and already have a saved name, inform the server
+  useEffect(() => {
+    if (socket && connected && hasSetName && userName) {
+      socket.emit('setName', userName);
+    }
+  }, [socket, connected, hasSetName, userName]);
+  useEffect(() => {
+    const onMessage = (msg: ChatMessage) => {
+      setMessages((prev) => [...prev, msg]);
+    };
+    
+    const onUserJoined = (data: { name: string; timestamp: number }) => {
+      const joinMessage: ChatMessage = {
+        id: `join-${Date.now()}`,
+        name: data.name,
+        message: "joined the chat",
+        timestamp: data.timestamp,
+        type: 'join'
+      };
+      setMessages((prev) => [...prev, joinMessage]);
+    };
+
+    const onUserLeft = (data: { name: string; timestamp: number }) => {
+      const leaveMessage: ChatMessage = {
+        id: `leave-${Date.now()}`,
+        name: data.name,
+        message: "left the chat",
+        timestamp: data.timestamp,
+        type: 'leave'
+      };
+      setMessages((prev) => [...prev, leaveMessage]);
+    };
+
+    if (socket && connected) {
+      socket.on("message", onMessage);
+      socket.on("userJoined", onUserJoined);
+      socket.on("userLeft", onUserLeft);
+    }
+    
+    return () => {
+      socket?.off("message", onMessage);
+      socket?.off("userJoined", onUserJoined);
+      socket?.off("userLeft", onUserLeft);
+    };
   }, [connected, socket]);
 
-  const onSend = async () => {
-    if (!input.trim()) return;
-    try {
-      const ack = await sendMessage(input, 5000);
-      console.log("✅ Ack:", ack);
-    } catch (e) {
-      console.error("⏳ Ack timeout or error");
-    } finally {
-      setInput("");
+  const handleSetName = () => {
+    if (nameInput.trim()) {
+      setName(nameInput.trim());
+      setNameInput("");
     }
   };
 
-  return (
-    <div className="p-5">
-      <h1 className="text-xl font-bold mb-3">💬 Live Chat</h1>
-      <p className="mb-2 text-sm">Status: {connected ? "online" : "offline"} · Delivered notices: {deliveredCount}</p>
-      <div className="border p-3 h-64 overflow-y-auto mb-3">
-        {messages.map((msg, i) => (
-          <p key={i}>{msg}</p>
-        ))}
-      </div>
-      <input
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        placeholder="Type message..."
-        className="border px-3 py-2 mr-2"
+  	const sendMessage = (message: string) => {
+		if (!socket || !hasSetName || !userName.trim()) return;
+		
+		const messageData = {
+			name: userName,
+			message: message,
+			timestamp: Date.now()
+		};
+		
+		socket.emit('message', messageData);
+	};
+
+  const onSend = () => {
+    if (!input.trim()) return;
+    sendMessage(input);
+    setInput("");
+  };
+
+  // No page-level key handler needed; handled inside components
+
+  // Name input modal
+  if (!hasSetName) {
+    return (
+      <NameModal
+        nameInput={nameInput}
+        onNameChange={setNameInput}
+        onSubmit={handleSetName}
       />
-      <button
-        onClick={onSend}
-        className="bg-blue-500 text-white px-4 py-2"
-      >
-        Send
-      </button>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-lime-800 p-5">
+      <div className="max-w-4xl mx-auto">
+        <div className="bg-lime-900 rounded-lg shadow-lg overflow-hidden">
+          {/* Header */}
+          <ChatHeader userName={userName} connected={connected} onChangeName={resetUser} />
+
+          {/* Messages */}
+          <MessageList messages={messages} />
+
+          {/* Input */}
+          <MessageInput
+            input={input}
+            onInputChange={setInput}
+            onSend={onSend}
+            connected={connected}
+          />
+        </div>
+      </div>
     </div>
   );
 }

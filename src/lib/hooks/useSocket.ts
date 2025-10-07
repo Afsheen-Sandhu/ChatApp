@@ -1,8 +1,16 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-type AckResponse = { status: string; receivedAt: number };
+export type AckResponse = { status: string; receivedAt: number };
+
+export interface ChatMessage {
+	id: string;
+	name: string;
+	message: string;
+	timestamp: number;
+	type: 'message' | 'join' | 'leave';
+}
 
 export function useSocket(options?: {
 	url?: string;
@@ -15,57 +23,34 @@ export function useSocket(options?: {
 		connectOnMount = true,
 	} = options || {};
 
-	const socketRef = useRef<Socket | null>(null);
+	const [socketInstance, setSocketInstance] = useState<Socket | null>(null);
 	const [connected, setConnected] = useState(false);
-	const [messages, setMessages] = useState<string[]>([]);
-	const [deliveredCount, setDeliveredCount] = useState(0);
 
-	const socket = useMemo(() => {
-		if (!socketRef.current) {
-			socketRef.current = io(url, { path });
-		}
-		return socketRef.current;
-	}, [url, path]);
+
+
 
 	useEffect(() => {
 		if (!connectOnMount) return;
 
-		const s = socket;
-		s.on("connect", () => setConnected(true));
-		s.on("disconnect", () => setConnected(false));
-		s.on("message", (msg: string) => setMessages((prev) => [...prev, msg]));
-		s.on("delivered", () => setDeliveredCount((c) => c + 1));
+		const socket = io(url, { path });
+		setSocketInstance(socket);
+
+		socket.on("connect", () => {
+			setConnected(true);
+		});
+		socket.on("disconnect", () => setConnected(false));
 
 		return () => {
-			s.off("connect");
-			s.off("disconnect");
-			s.off("message");
-			s.off("delivered");
+			socket.off("connect");
+			socket.off("disconnect");
+			socket.disconnect();
 		};
-	}, [socket, connectOnMount]);
-
-	const sendMessage = (text: string, timeoutMs = 5000) => {
-		return new Promise<AckResponse>((resolve, reject) => {
-			if (!text.trim()) {
-				reject(new Error("Empty message"));
-				return;
-			}
-			socket
-				.timeout(timeoutMs)
-				.emit("message", text, (err: Error | null, res?: AckResponse) => {
-					if (err) return reject(err);
-					if (!res) return reject(new Error("No ack payload"));
-					resolve(res);
-				});
-		});
-	};
+	}, [connectOnMount, url, path]);
 
 	return {
-		socket,
+		socket: socketInstance,
 		connected,
-		messages,
-		deliveredCount,
-		sendMessage,
+		
 	};
 }
 

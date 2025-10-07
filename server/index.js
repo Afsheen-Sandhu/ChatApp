@@ -21,20 +21,57 @@ const io = new Server(httpServer, {
 	},
 });
 
+// Store connected users: socketId -> userName
+const connectedUsers = new Map();
+
 io.on("connection", (socket) => {
 	console.log("🟢 Client connected", socket.id);
 
-	socket.on("message", (msg, ack) => {
-		console.log("💬 Message", msg);
-		io.emit("message", msg);
-		// Notify all except sender that the message was delivered
-		socket.broadcast.emit("delivered");
-		if (typeof ack === "function") {
-			ack({ status: "ok", receivedAt: Date.now() });
+	// Handle user setting their name
+	socket.on("setName", (name) => {
+		connectedUsers.set(socket.id, name);
+		console.log(`👤 User ${name} joined the chat`);
+		
+		// Notify all other users that someone joined
+		socket.broadcast.emit("userJoined", {
+			name: name,
+			timestamp: Date.now()
+		});
+	});
+
+	// Handle messages
+	socket.on("message", (data) => {
+		const userName = connectedUsers.get(socket.id);
+		if (!userName) {
+			console.log("❌ Message from user without name");
+			return;
 		}
+
+		const messageData = {
+			id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+			name: userName,
+			message: data.message,
+			timestamp: data.timestamp,
+			type: 'message'
+		};
+
+		console.log(`💬 ${userName}: ${data.message}`);
+		io.emit("message", messageData);
 	});
 
 	socket.on("disconnect", () => {
+		const userName = connectedUsers.get(socket.id);
+		if (userName) {
+			console.log(`👋 User ${userName} left the chat`);
+			
+			// Notify all other users that someone left
+			io.emit("userLeft", {
+				name: userName,
+				timestamp: Date.now()
+			});
+		}
+		
+		connectedUsers.delete(socket.id);
 		console.log("🔴 Client disconnected", socket.id);
 	});
 });
