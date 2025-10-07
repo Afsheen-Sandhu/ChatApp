@@ -29,18 +29,25 @@ io.on("connection", (socket) => {
 	console.log("🟢 Client connected", socket.id);
 
 	// Handle user setting their name
-	socket.on("setName", (name) => {
-		connectedUsers.set(socket.id, name);
-		console.log(`👤 User ${name} joined the chat`);
-		// Notify all other users that someone joined
-		io.emit("userJoined", {
-			name: name,
-			timestamp: Date.now()
-		});
-	});
+socket.on("setName", (name) => {
+    const existing = connectedUsers.get(socket.id);
+    if (existing && existing !== name) {
+        // Treat as change if a name already exists
+        connectedUsers.set(socket.id, name);
+        io.emit("nameChanged", { oldName: existing, newName: name, timestamp: Date.now() });
+        console.log(`✏️  ${existing} is now ${name}`);
+        return;
+    }
+    connectedUsers.set(socket.id, name);
+    console.log(`👤 User ${name} joined the chat`);
+    io.emit("userJoined", {
+        name: name,
+        timestamp: Date.now()
+    });
+});
 
 	// Handle messages
-socket.on("message", (data, ack) => {
+	socket.on("message", (data, ack) => {
 		const userName = connectedUsers.get(socket.id);
 		if (!userName) {
 			console.log("❌ Message from user without name");

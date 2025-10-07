@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChatMessage, useSocket } from "@/lib/hooks/useSocket";
 import NameModal from "@/components/NameModal";
 import ChatHeader from "@/components/ChatHeader";
@@ -14,6 +14,7 @@ export default function ChatPage() {
   const [hasSetName, setHasSetName] = useState(false);  
   const [userName, setUserName] = useState("");
   const [statusById, setStatusById] = useState<Record<string, 'sent' | 'delivered'>>({});
+  const announcedRef = useRef(false);
   
   const { socket, connected, } = useSocket();
 
@@ -30,10 +31,12 @@ export default function ChatPage() {
     setHasSetName(true);
     localStorage.setItem('chatUserName', name);
     if (socket && connected) {
-      if (prev) {
+      // If we've already announced once on this connection, treat as change
+      if (announcedRef.current || prev) {
         socket.emit('changeName', name);
       } else {
         socket.emit('setName', name);
+        announcedRef.current = true;
       }
     }
   };
@@ -44,12 +47,19 @@ export default function ChatPage() {
     setHasSetName(false);
   };
   
-  // If we reconnect and already have a saved name, inform the server
+  // Announce name once per connection (avoids duplicate joins)
   useEffect(() => {
-    if (socket && connected && hasSetName && userName) {
-      socket.emit('setName', userName);
+    if (connected === false) {
+      announcedRef.current = false;
     }
-  }, [socket, connected, hasSetName, userName]);
+  }, [connected]);
+
+  useEffect(() => {
+    if (socket && connected && hasSetName && userName && !announcedRef.current) {
+      socket.emit('setName', userName);
+      announcedRef.current = true;
+    }
+  }, [socket, connected]);
   useEffect(() => {
     const onMessage = (msg: ChatMessage) => {
       setMessages((prev) => [...prev, msg]);
