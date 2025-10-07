@@ -11,42 +11,44 @@ export default function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [nameInput, setNameInput] = useState("");
-  const [hasSetName, setHasSetName] = useState(false);  
+  const [hasSetName, setHasSetName] = useState(false);
   const [userName, setUserName] = useState("");
-  const [statusById, setStatusById] = useState<Record<string, 'sent' | 'delivered'>>({});
+  const [statusById, setStatusById] = useState<
+    Record<string, "sent" | "delivered">
+  >({});
   const announcedRef = useRef(false);
-  
-  const { socket, connected, } = useSocket();
 
-  	useEffect(() => {
-		const savedName = localStorage.getItem('chatUserName');
-		if (savedName) {
-			// Prefill only; do not auto-login
-			setNameInput(savedName);
-		}
-	}, []);
+  const { socket, connected } = useSocket();
+
+  useEffect(() => {
+    const savedName = localStorage.getItem("chatUserName");
+    if (savedName) {
+      // Prefill only; do not auto-login
+      setNameInput(savedName);
+    }
+  }, []);
   const setName = (name: string) => {
     const prev = userName;
     setUserName(name);
     setHasSetName(true);
-    localStorage.setItem('chatUserName', name);
+    localStorage.setItem("chatUserName", name);
     if (socket && connected) {
       // If we've already announced once on this connection, treat as change
       if (announcedRef.current || prev) {
-        socket.emit('changeName', name);
+        socket.emit("changeName", name);
       } else {
-        socket.emit('setName', name);
+        socket.emit("setName", name);
         announcedRef.current = true;
       }
     }
   };
-  
+
   const resetUser = () => {
-    localStorage.removeItem('chatUserName');
+    localStorage.removeItem("chatUserName");
     setUserName("");
     setHasSetName(false);
   };
-  
+
   // Announce name once per connection (avoids duplicate joins)
   useEffect(() => {
     if (connected === false) {
@@ -55,8 +57,14 @@ export default function ChatPage() {
   }, [connected]);
 
   useEffect(() => {
-    if (socket && connected && hasSetName && userName && !announcedRef.current) {
-      socket.emit('setName', userName);
+    if (
+      socket &&
+      connected &&
+      hasSetName &&
+      userName &&
+      !announcedRef.current
+    ) {
+      socket.emit("setName", userName);
       announcedRef.current = true;
     }
   }, [socket, connected]);
@@ -64,14 +72,14 @@ export default function ChatPage() {
     const onMessage = (msg: ChatMessage) => {
       setMessages((prev) => [...prev, msg]);
     };
-    
+
     const onUserJoined = (data: { name: string; timestamp: number }) => {
       const joinMessage: ChatMessage = {
         id: `join-${Date.now()}`,
         name: data.name,
         message: "joined the chat",
         timestamp: data.timestamp,
-        type: 'join'
+        type: "join",
       };
       setMessages((prev) => [...prev, joinMessage]);
     };
@@ -82,25 +90,29 @@ export default function ChatPage() {
         name: data.name,
         message: "left the chat",
         timestamp: data.timestamp,
-        type: 'leave'
+        type: "leave",
       };
       setMessages((prev) => [...prev, leaveMessage]);
     };
 
-    const onNameChanged = (data: { oldName: string; newName: string; timestamp: number }) => {
+    const onNameChanged = (data: {
+      oldName: string;
+      newName: string;
+      timestamp: number;
+    }) => {
       const systemMsg: ChatMessage = {
         id: `name-${Date.now()}`,
         name: data.oldName,
         message: `is now ${data.newName}`,
         timestamp: data.timestamp,
-        type: 'join',
+        type: "join",
       };
       setMessages((prev) => [...prev, systemMsg]);
     };
 
     const onDelivered = (data: { messageId: string }) => {
       const id: string = String(data.messageId);
-      setStatusById((prev) => ({ ...prev, [id]: 'delivered' }));
+      setStatusById((prev) => ({ ...prev, [id]: "delivered" }));
     };
 
     if (socket && connected) {
@@ -110,7 +122,7 @@ export default function ChatPage() {
       socket.on("nameChanged", onNameChanged);
       socket.on("delivered", onDelivered);
     }
-    
+
     return () => {
       socket?.off("message", onMessage);
       socket?.off("userJoined", onUserJoined);
@@ -127,41 +139,36 @@ export default function ChatPage() {
     }
   };
 
-	const sendMessage = (message: string) => {
-		return new Promise<AckResponse>((resolve, reject) => {
-			if (!socket || !hasSetName || !userName.trim()) return reject(new Error('Not ready'));
-			const messageData = {
-				name: userName,
-				message: message,
-				timestamp: Date.now()
-			};
-			socket
-				.timeout(5000)
-				.emit('message', messageData, (err: unknown, res?: AckResponse) => {
-					if (err) return reject(err as Error);
-					if (!res) return reject(new Error('No ack payload'));
-					resolve(res);
-				});
-		});
-	};
+  const sendMessage = (message: string) => {
+    if (!socket || !hasSetName || !userName.trim()) return;
+    const messageData = {
+      name: userName,
+      message: message,
+      timestamp: Date.now(),
+    };
+    socket
+      .timeout(5000)
+      .emit("message", messageData, (err: unknown, res?: AckResponse) => {
+        if (err || !res) console.warn("⏳ Ack failed");
+        console.log("✅ Ack received:", err, res);
+      });
+  };
 
-	const onSend = async () => {
-		if (!input.trim()) return;
-        try {
-            const ack = await sendMessage(input);
-            console.log('✅ Ack:', ack);
-            const id = typeof ack.messageId === 'string' ? ack.messageId : undefined;
-            if (id) {
-                setStatusById((prev) => ({ ...prev, [id]: 'sent' }));
-            }
-		} catch (e) {
-			console.warn('⏳ Ack timeout or error');
-		} finally {
-			setInput("");
-		}
-	};
-
-  
+  const onSend = async () => {
+    if (!input.trim()) return;
+    try {
+      const ack = await sendMessage(input);
+      // console.log('✅ Ack:', ack);
+      // const id = typeof ack.messageId === 'string' ? ack.messageId : undefined;
+      // if (id) {
+      //     setStatusById((prev) => ({ ...prev, [id]: 'sent' }));
+      // }
+    } catch (e) {
+      console.warn("⏳ Ack timeout or error");
+    } finally {
+      setInput("");
+    }
+  };
 
   // Name input modal
   if (!hasSetName) {
@@ -170,7 +177,6 @@ export default function ChatPage() {
         nameInput={nameInput}
         onNameChange={setNameInput}
         onSubmit={handleSetName}
-        
       />
     );
   }
@@ -180,10 +186,18 @@ export default function ChatPage() {
       <div className="max-w-4xl mx-auto ">
         <div className="bg-white rounded-xl shadow-lg overflow-hidden border border-amber-200">
           {/* Header */}
-          <ChatHeader userName={userName} connected={connected} onChangeName={resetUser} />
+          <ChatHeader
+            userName={userName}
+            connected={connected}
+            onChangeName={resetUser}
+          />
 
           {/* Messages */}
-          <MessageList messages={messages} statusById={statusById} currentUser={userName} />
+          <MessageList
+            messages={messages}
+            statusById={statusById}
+            currentUser={userName}
+          />
 
           {/* Input */}
           <MessageInput
