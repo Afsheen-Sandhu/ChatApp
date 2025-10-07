@@ -23,6 +23,7 @@ const io = new Server(httpServer, {
 
 // Store connected users: socketId -> userName
 const connectedUsers = new Map();
+const DELIVERED_DELAY_MS = Number(1200);
 
 io.on("connection", (socket) => {
 	console.log("🟢 Client connected", socket.id);
@@ -31,19 +32,19 @@ io.on("connection", (socket) => {
 	socket.on("setName", (name) => {
 		connectedUsers.set(socket.id, name);
 		console.log(`👤 User ${name} joined the chat`);
-		
 		// Notify all other users that someone joined
-		socket.broadcast.emit("userJoined", {
+		io.emit("userJoined", {
 			name: name,
 			timestamp: Date.now()
 		});
 	});
 
 	// Handle messages
-	socket.on("message", (data) => {
+socket.on("message", (data, ack) => {
 		const userName = connectedUsers.get(socket.id);
 		if (!userName) {
 			console.log("❌ Message from user without name");
+			if (ack) ack({ status: 'error', receivedAt: Date.now() });
 			return;
 		}
 
@@ -55,8 +56,13 @@ io.on("connection", (socket) => {
 			type: 'message'
 		};
 
-		console.log(`💬 ${userName}: ${data.message}`);
-		io.emit("message", messageData);
+    console.log(`💬 ${userName}: ${data.message}`);
+    io.emit("message", messageData);
+    if (ack) ack({ status: 'received', receivedAt: Date.now(), messageId: messageData.id });
+
+    setTimeout(() => {
+      socket.emit("delivered", { messageId: messageData.id });
+    }, DELIVERED_DELAY_MS);
 	});
 
 	// Handle name change

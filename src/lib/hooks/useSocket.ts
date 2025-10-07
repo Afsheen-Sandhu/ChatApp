@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-export type AckResponse = { status: string; receivedAt: number };
+export type AckResponse = { status: string; receivedAt: number; messageId?: string };
 
 export interface ChatMessage {
 	id: string;

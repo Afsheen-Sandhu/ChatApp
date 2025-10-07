@@ -5,12 +5,15 @@ import NameModal from "@/components/NameModal";
 import ChatHeader from "@/components/ChatHeader";
 import MessageList from "@/components/MessageList";
 import MessageInput from "@/components/MessageInput";
+import { AckResponse } from "@/lib/hooks/useSocket";
 
 export default function ChatPage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [nameInput, setNameInput] = useState("");
-  const [hasSetName, setHasSetName] = useState(false);  const [userName, setUserName] = useState("");
+  const [hasSetName, setHasSetName] = useState(false);  
+  const [userName, setUserName] = useState("");
+  const [statusById, setStatusById] = useState<Record<string, 'sent' | 'delivered'>>({});
   
   const { socket, connected, } = useSocket();
 
@@ -85,11 +88,17 @@ export default function ChatPage() {
       setMessages((prev) => [...prev, systemMsg]);
     };
 
+    const onDelivered = (data: { messageId: string }) => {
+      const id: string = String(data.messageId);
+      setStatusById((prev) => ({ ...prev, [id]: 'delivered' }));
+    };
+
     if (socket && connected) {
       socket.on("message", onMessage);
       socket.on("userJoined", onUserJoined);
       socket.on("userLeft", onUserLeft);
       socket.on("nameChanged", onNameChanged);
+      socket.on("delivered", onDelivered);
     }
     
     return () => {
@@ -97,6 +106,7 @@ export default function ChatPage() {
       socket?.off("userJoined", onUserJoined);
       socket?.off("userLeft", onUserLeft);
       socket?.off("nameChanged", onNameChanged);
+      socket?.off("delivered");
     };
   }, [connected, socket]);
 
@@ -107,23 +117,39 @@ export default function ChatPage() {
     }
   };
 
-  	const sendMessage = (message: string) => {
-		if (!socket || !hasSetName || !userName.trim()) return;
-		
-		const messageData = {
-			name: userName,
-			message: message,
-			timestamp: Date.now()
-		};
-		
-		socket.emit('message', messageData);
+	const sendMessage = (message: string) => {
+		return new Promise<AckResponse>((resolve, reject) => {
+			if (!socket || !hasSetName || !userName.trim()) return reject(new Error('Not ready'));
+			const messageData = {
+				name: userName,
+				message: message,
+				timestamp: Date.now()
+			};
+			socket
+				.timeout(5000)
+				.emit('message', messageData, (err: unknown, res?: AckResponse) => {
+					if (err) return reject(err as Error);
+					if (!res) return reject(new Error('No ack payload'));
+					resolve(res);
+				});
+		});
 	};
 
-  const onSend = () => {
-    if (!input.trim()) return;
-    sendMessage(input);
-    setInput("");
-  };
+	const onSend = async () => {
+		if (!input.trim()) return;
+        try {
+            const ack = await sendMessage(input);
+            console.log('✅ Ack:', ack);
+            const id = typeof ack.messageId === 'string' ? ack.messageId : undefined;
+            if (id) {
+                setStatusById((prev) => ({ ...prev, [id]: 'sent' }));
+            }
+		} catch (e) {
+			console.warn('⏳ Ack timeout or error');
+		} finally {
+			setInput("");
+		}
+	};
 
   
 
@@ -147,7 +173,7 @@ export default function ChatPage() {
           <ChatHeader userName={userName} connected={connected} onChangeName={resetUser} />
 
           {/* Messages */}
-          <MessageList messages={messages} />
+          <MessageList messages={messages} statusById={statusById} currentUser={userName} />
 
           {/* Input */}
           <MessageInput
